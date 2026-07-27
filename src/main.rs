@@ -30,5 +30,5 @@ fn main() {
     println!("{:?}", tensor1.shape());
     tensor1.make_contiguous();
     println!("{:?}", tensor1.data);
-    
+
 }

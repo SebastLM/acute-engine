@@ -28,7 +28,7 @@ fn validate_shape(shape: &[usize], data_len: usize) {
     }
 }
 
-pub fn is_valid_permutation(axes: &[usize], n: usize) -> bool {
+fn is_valid_permutation(axes: &[usize], n: usize) -> bool {
     let mut seen = vec![false; n];
     for &a in axes {
         if a >= n || seen[a] { return false; }
@@ -37,14 +37,74 @@ pub fn is_valid_permutation(axes: &[usize], n: usize) -> bool {
     true
 }
 
+/// A tree of arbitrarily deep nested Vec`s, used only as the
+/// path for building a Tensor from a nested literal of unknown rank 
+#[derive(Debug)]
+pub enum NestedVec<T: TensorElement> {
+    Value(T),
+    List(Vec<NestedVec<T>>),
+}
+
+impl<T: TensorElement> NestedVec<T> {
+    fn flatten(&self, capacity: usize) -> Vec<T> {
+        let mut out = Vec::with_capacity(capacity);
+        self.flatten_into(&mut out);
+        out
+    }
+
+    fn flatten_into(&self, out: &mut Vec<T>) {
+        match self {
+            NestedVec::Value(v) => out.push(*v),
+            NestedVec::List(items) => {
+                for item in items {
+                    item.flatten_into(out);
+                }
+            }
+        }
+    }
+}
+
+impl<T: TensorElement> From<T> for NestedVec<T> {
+    fn from(v: T) -> Self {
+        NestedVec::Value(v)
+    }
+}
+
+impl<T: TensorElement, U: Into<NestedVec<T>>> From<Vec<U>> for NestedVec<T> {
+    fn from(v: Vec<U>) -> Self {
+        NestedVec::List(v.into_iter().map(Into::into).collect())
+    }
+}
+
 
 impl<T: TensorElement> Tensor<T> {
 
+    // Fast path: `data` is already a flat buffer. Moved in directly —
+    // zero allocation, zero copy beyond whatever `data` already was.
     pub fn new(data: Vec<T>, shape: impl Into<Box<[usize]>>) -> Tensor<T> {
         let shape = shape.into();
         validate_shape(&shape, data.len());
 
-        let mut new = Tensor { 
+        let mut new = Tensor {
+            data,
+            shape,
+            stride: Box::new([]),
+        };
+        new.update_stride();
+        new
+    }
+
+    // Convenience path: build from a nested Vec literal of any rank
+    // (`Vec<T>`, `Vec<Vec<T>>`, `Vec<Vec<Vec<T>>>`, ... unbounded depth).
+    // Costs one flattening pass — not the hot path, use `new` for that.
+    pub fn from_nested(data: impl Into<NestedVec<T>>, shape: impl Into<Box<[usize]>>) -> Tensor<T> {
+        let shape = shape.into();
+        let expected: usize = shape.iter().product();
+        let data = data.into().flatten(expected);
+
+        validate_shape(&shape, data.len());
+
+        let mut new = Tensor {
             data,
             shape,
             stride: Box::new([]),
