@@ -16,7 +16,7 @@ fn bench_construction(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("new_flat", n), &flat, |bencher, data| {
             bencher.iter_batched(
                 || data.clone(),
-                |owned| black_box(Tensor::new(owned, vec![a, b, d])),
+                |owned| black_box(Tensor::new(owned, vec![a, b, d], None)),
                 BatchSize::SmallInput,
             );
         });

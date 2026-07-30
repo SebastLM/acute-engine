@@ -1,7 +1,7 @@
 use super::*;
 
 fn t(data: Vec<f32>, shape: &[usize]) -> Tensor<f32> {
-    Tensor::new(data, shape.to_vec().into_boxed_slice())
+    Tensor::new(data, shape.to_vec().into_boxed_slice(), None)
 }
 
 // --- construction & validation ---

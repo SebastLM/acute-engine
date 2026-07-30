@@ -2,7 +2,11 @@
 // option to make it continous is possible with Tensor.contiguous()
 // when transposing, permuting is done
 
-pub trait TensorElement: Copy + Default {}
+use std::ops::{Add, Div, Mul, Sub};
+
+pub trait TensorElement:
+    Copy + Default + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self>
+{}
 
 impl TensorElement for f32 {}
 impl TensorElement for f64 {}
@@ -15,6 +19,8 @@ pub struct Tensor<T: TensorElement> {
     shape: Box<[usize]>,
     /// needed jump to move to next dim
     stride: Box<[usize]>,
+
+    // TODO: add Q, K, V. store offset for each, all will be stored inside data
 }
 
 
@@ -37,8 +43,8 @@ fn is_valid_permutation(axes: &[usize], n: usize) -> bool {
     true
 }
 
-/// A tree of arbitrarily deep nested Vec`s, used only as the
-/// path for building a Tensor from a nested literal of unknown rank 
+// A tree of arbitrarily deep nested Vec`s, used only as the
+// path for building a Tensor from a nested literal of unknown rank 
 #[derive(Debug)]
 pub enum NestedVec<T: TensorElement> {
     Value(T),
@@ -79,18 +85,22 @@ impl<T: TensorElement, U: Into<NestedVec<T>>> From<Vec<U>> for NestedVec<T> {
 
 impl<T: TensorElement> Tensor<T> {
 
-    // Fast path: `data` is already a flat buffer. Moved in directly —
-    // zero allocation, zero copy beyond whatever `data` already was.
-    pub fn new(data: Vec<T>, shape: impl Into<Box<[usize]>>) -> Tensor<T> {
+    // Fast path: data is already a flat buffer. Moved in directly
+    // zero allocation, zero copy beyond whatever data already was.
+    pub fn new(data: Vec<T>, shape: impl Into<Box<[usize]>>, stride: Option<Box<[usize]>>) -> Tensor<T> {
         let shape = shape.into();
         validate_shape(&shape, data.len());
 
         let mut new = Tensor {
             data,
             shape,
-            stride: Box::new([]),
+            stride: match stride {
+                        None => Box::new([]),
+                        Some(s) => s,
+                    }
         };
-        new.update_stride();
+        
+        if new.stride.len() == 0 { new.update_stride(); }
         new
     }
 
@@ -138,11 +148,10 @@ impl<T: TensorElement> Tensor<T> {
 
         let total: usize = self.shape.iter().product();
         let mut data = Vec::with_capacity(total);
-        // row
         let mut idx = vec![0usize; self.shape.len()];
 
         for _ in 0..total  {
-            //row * stride[]
+            //row * stride[] + col * stride[]...
             let offset: usize = idx.iter().zip(self.stride.iter())
                                     .map(|(&i, &s)| i * s).sum();
             data.push(self.data[offset]);
