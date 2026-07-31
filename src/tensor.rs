@@ -82,6 +82,16 @@ impl<T: TensorElement, U: Into<NestedVec<T>>> From<Vec<U>> for NestedVec<T> {
     }
 }
 
+impl<T, U, const N: usize> From<[U; N]> for NestedVec<T>
+where
+    T: TensorElement,
+    U: Into<NestedVec<T>>,
+{
+    fn from(arr: [U; N]) -> Self {
+        NestedVec::List(arr.into_iter().map(Into::into).collect())
+    }
+}
+
 
 impl<T: TensorElement> Tensor<T> {
 
@@ -160,7 +170,7 @@ impl<T: TensorElement> Tensor<T> {
                 if idx[d] < self.shape[d] { break; }
                 idx[d] = 0;
             }
-            
+
         }
         self.data = data;
         self.update_stride();

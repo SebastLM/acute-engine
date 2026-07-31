@@ -6,4 +6,5 @@ inferene engine. build for learning purposes
 
     run:
         - cargo bench
-    report is generated in acute-engine/target/criterion/report/index.html
+    report is generated in:
+        - acute-engine/target/criterion/report/index.html

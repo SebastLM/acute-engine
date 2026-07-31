@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+smallvec = "1.15.2"
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8.2"
 
 [[bench]]
 name = "tensor"
 harness = false
+
+[build]
+rustflags = ["-C", "target-cpu=native"] # generate instruction specific to the build device CPU
+opt-level = "s" # reduce binary size. theres 2 lvl's, 's' & 'z', being that z is a little to aggressive and might lead to a performance downgrade
