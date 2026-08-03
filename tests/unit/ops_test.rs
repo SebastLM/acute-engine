@@ -223,3 +223,65 @@ fn sub_strided_path_matches_dense_reference_for_a_3d_case_with_both_operands_non
 
     assert_eq!(c.data, expected);
 }
+
+#[test]
+fn mul_rejects_incompatible_inner_dimensions() {
+    let a = t(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = t(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]); // last dim of a (3) != second-to-last of b (2)
+
+    let err = mul(&a, &b).unwrap_err();
+    assert!(err.contains("incompatible"));
+}
+
+#[test]
+fn mul_1d_is_elementwise() {
+    let a = t(vec![1.0, 2.0, 3.0], &[3]);
+    let b = t(vec![4.0, 5.0, 6.0], &[3]);
+
+    let c = mul(&a, &b).expect("shapes match");
+
+    assert_eq!(c.shape(), &[3]);
+    assert_eq!(c.data, vec![4.0, 10.0, 18.0]);
+}
+
+#[test]
+fn mul_2d_matmul_for_freshly_built_contiguous_tensors() {
+    // a = [[1,2,3],[4,5,6]], b = [[7,8],[9,10],[11,12]]
+    let a = t(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+    let b = t(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[3, 2]);
+
+    let c = mul(&a, &b).expect("shapes compatible");
+
+    assert_eq!(c.shape(), &[2, 2]);
+    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0]);
+}
+
+#[test]
+fn mul_takes_the_strided_path_when_operands_are_non_contiguous() {
+    // a: built [3,2] then transposed -> logical [[1,3,5],[2,4,6]], shape [2,3], non-contiguous
+    let mut a = t(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[3, 2]);
+    a.transpose(0, 1);
+    assert!(!a.is_contiguous());
+
+    // b: built [2,3] then transposed -> logical [[7,10],[8,11],[9,12]], shape [3,2], non-contiguous
+    let mut b = t(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], &[2, 3]);
+    b.transpose(0, 1);
+    assert!(!b.is_contiguous());
+
+    let c = mul(&a, &b).expect("shapes compatible");
+
+    assert_eq!(c.shape(), &[2, 2]);
+    assert_eq!(c.data, vec![76.0, 103.0, 100.0, 136.0]);
+}
+
+#[test]
+fn mul_batched_3d_matmul() {
+    // batch of 2: [2,3] x [3,2] -> [2,2] per batch
+    let a = t(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0], &[2, 2, 3]);
+    let b = t(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], &[2, 3, 2]);
+
+    let c = mul(&a, &b).expect("shapes compatible");
+
+    assert_eq!(c.shape(), &[2, 2, 2]);
+    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0, 2.0, 3.0, 4.0, 5.0]);
+}
