@@ -6,16 +6,22 @@ use std::ops::{Add, Div, Mul, Sub};
 
 pub trait TensorElement:
     Copy + Default + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self>
-{}
+{
+        fn zero() -> Self;
+}
 
-impl TensorElement for f32 {}
-impl TensorElement for f64 {}
+impl TensorElement for f32 {
+    fn zero() -> Self { 0.0 }
+}
+impl TensorElement for f64 {
+    fn zero() -> Self { 0.0 }
+}
 
 
 #[derive(Debug)]
 pub struct Tensor<T: TensorElement> {
     /// stored as a 1D vector
-    pub data: Vec<T>, 
+    pub data: Vec<T>, // TODO: later change to *mut T when arena starts existing
     shape: Box<[usize]>,
     /// needed jump to move to next dim
     stride: Box<[usize]>,

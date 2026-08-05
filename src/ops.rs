@@ -26,7 +26,7 @@ pub fn add<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Result<Tensor<T
     } else if !t1.is_contiguous() || !t2.is_contiguous() {
         return Ok(strided_add(t1, t2));
     }
-    Err("*** Unknown error adding elements ***")
+    Err("\"[acute]\": incompatible elements for add")
 }
 
 // Requires both inputs to already be contiguous
@@ -91,7 +91,7 @@ pub fn sub<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Result<Tensor<T
     } else if !t1.is_contiguous() || !t2.is_contiguous() {
         return Ok(strided_sub(t1, t2));
     }
-    Err("*** Unknown error subtracting elements ***")
+    Err("\"[acute]\": incompatible elements for sub")
 }
 
 // Requires both inputs to already be contiguous
@@ -146,89 +146,114 @@ fn strided_sub<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
 }
 
 
-pub fn mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Result<Tensor<T>,&'static str> {
-    let r1 = t1.shape().len();
-    let r2 = t2.shape().len();
 
-    if r1 == 1 && t1.shape() == t2.shape() {
-        return Ok(ele_w_d1_mul(t1, t2)); // element-wise, 1D only
+fn mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Result<Tensor<T>,&'static str> {
+    let len  = t1.shape().len();
+    if len == 1 && t1.shape() == t2.shape() { return Ok(ele_w_d1_mul(t1, t2)); } // currently only element wise op's
+    if t1.shape().len() == t2.shape().len() {
+        if len >= 3 && t1.shape()[0] == t2.shape()[0] {
+            if t1.shape()[len - 1] == t2.shape()[len - 2] {
+                return Ok(strided_mul(t1, t2));
+            }
+        } else if len == 2 {
+            if t1.shape()[1] == t2.shape()[0] {
+                return Ok(strided_mul(t1, t2));
+            }
+
+        }
     }
-
-    // batched matmul: t1 [..batch, m, k] x t2 [..batch, k, n] -> [..batch, m, n]
-    // batch dims (everything before the trailing two) must match exactly;
-    // plain 2D matmul is just the case where there are no batch dims at all.
-    if r1 >= 2 && r1 == r2
-        && t1.shape()[..r1 - 2] == t2.shape()[..r2 - 2]
-        && t1.shape()[r1 - 1] == t2.shape()[r2 - 2]
-    {
-        return Ok(strided_mul(t1, t2));
-    }
-
-    Err("\"[acute]\": shapes are incompatible for multiplication")
+    Err("\"[acute]\": incompatible elements for mul")
 }
 
 
-// element_wise
+// TODO: dot product multiplication
+
+
+// element_wise multiplication for matrices with 1 dimension
 fn ele_w_d1_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
-    let data: Vec<T> = t1.data.iter().zip(t2.data.iter()).map(|(&a, &b)| a * b).collect();
+    let len = t1.data.len();
+    let mut data =  vec![T::default(); len];
+    for i in 0..len {
+        data[i] = t1.data[i] * t2.data[i];
+    }
     Tensor::new(
         data,
         t1.shape().to_vec().into_boxed_slice(),
+        Some(vec![1].into_boxed_slice())
+    )
+}
+
+
+fn dot_d1_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
+    let mut val: T = T::zero();
+    for i in 0..t1.data.len() {
+        val = val + t1.data[i] * t2.data[i];
+    }
+    let data =  vec![val];
+    Tensor::new(
+        data, // In the future we won't be storing a vector for a single val, 
+              // but rather a pointer to the memory containing the actual data
+        t1.shape().to_vec().into_boxed_slice(),
+        Some(vec![1].into_boxed_slice())
+    )
+}
+
+// element wise mul for  2+ dimensions
+fn strided_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
+    let len = t2.shape().len();
+    let total = t1.shape().iter().product::<usize>() * t2.shape()[len - 1];
+    let shape1 = &t1.shape();
+    let shape2 = &t2.shape();
+
+    let mut shape = shape1.to_vec().into_boxed_slice();
+    shape[len - 1] = shape2[len - 1];
+
+    let mut data = vec![T::default(); shape.iter().product()]; // batch*m*n output cells
+    let mut idx1: SmallVec<[usize; 8]>  = SmallVec::from_elem(0usize, t1.shape().len());
+    let mut idx2: SmallVec<[usize; 8]>  = SmallVec::from_elem(0usize, t2.shape().len());
+
+    let mut pos = 0;
+    for _ in 0..total  {
+        // row * stride[] + col * stride[]...
+        let offset1: usize = idx1.iter().zip(t1.stride().iter())
+                                .map(|(&i, &s)| i * s).sum::<usize>()
+                                + idx2[len - 2] * t1.stride()[len - 1];
+
+        let offset2: usize = idx1.iter().zip(t2.stride().iter()).take(len - 2)
+                                .map(|(&i, &s)| i * s).sum::<usize>()
+                                + idx2[len - 2] * t2.stride()[len - 2]
+                                + idx2[len - 1] * t2.stride()[len - 1];
+
+        data[pos] = data[pos] + t1.data[offset1] * t2.data[offset2];
+
+        idx2[len - 2] += 1;
+        if idx2[len - 2] >= shape2[len - 2] {
+            idx2[len - 2] = 0;
+            pos += 1; // output matrix position calculated
+            idx2[len - 1] += 1;
+
+            if idx2[len - 1] >= shape2[len - 1] {
+                idx2[len - 1] = 0;
+                // finished every column for this row -> advance idx1's row (and batch dims, if any)
+                for d in (0..idx1.len() - 1).rev() {
+                    idx1[d] += 1;
+                    if idx1[d] < shape1[d] { break; }
+                    idx1[d] = 0;
+                }
+            }
+        }
+    }
+
+    Tensor::new(
+        data,
+        shape,
         None
     )
 }
 
-// Batched matrix multiply. t1: [..batch, m, k], t2: [..batch, k, n] -> [..batch, m, n]
-// Walks each operand's own stride directly (no densification needed first),
-// so this works whether t1/t2 are contiguous or the result of transpose/permute.
-fn strided_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
-    let r1 = t1.shape().len();
-    let r2 = t2.shape().len();
-    let m = t1.shape()[r1 - 2];
-    let k = t1.shape()[r1 - 1];
-    let n = t2.shape()[r2 - 1];
-    debug_assert_eq!(k, t2.shape()[r2 - 2], "strided_mul requires t1's last dim to match t2's second-to-last dim");
 
-    let batch_shape = &t1.shape()[..r1 - 2];
-    let batch_total: usize = batch_shape.iter().product();
 
-    let mut out_shape: Vec<usize> = batch_shape.to_vec();
-    out_shape.push(m);
-    out_shape.push(n);
 
-    let mut data = vec![T::default(); batch_total * m * n];
-    let mut batch_idx: SmallVec<[usize; 8]> = SmallVec::from_elem(0usize, batch_shape.len());
-    let mut pos = 0;
-
-    for _ in 0..batch_total {
-        let batch_offset1: usize = batch_idx.iter().zip(t1.stride().iter())
-                                    .map(|(&b, &s)| b * s).sum();
-        let batch_offset2: usize = batch_idx.iter().zip(t2.stride().iter())
-                                    .map(|(&b, &s)| b * s).sum();
-
-        for i in 0..m {
-            for j in 0..n {
-                let mut acc = T::default();
-                for kk in 0..k {
-                    let offset1 = batch_offset1 + i * t1.stride()[r1 - 2] + kk * t1.stride()[r1 - 1];
-                    let offset2 = batch_offset2 + kk * t2.stride()[r2 - 2] + j * t2.stride()[r2 - 1];
-                    acc = acc + t1.data[offset1] * t2.data[offset2];
-                }
-                data[pos] = acc;
-                pos += 1;
-            }
-        }
-
-        for d in (0..batch_idx.len()).rev() {
-            batch_idx[d] += 1;
-            if batch_idx[d] < batch_shape[d] { break; }
-            batch_idx[d] = 0;
-        }
-    }
-
-    // freshly built, written in canonical row-major order -> canonical stride, not an input's
-    Tensor::new(data, out_shape.into_boxed_slice(), None)
-}
 
 #[cfg(test)]
 #[path = "../tests/unit/ops_test.rs"]
