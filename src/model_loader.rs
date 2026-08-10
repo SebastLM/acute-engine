@@ -1,4 +1,14 @@
+use std::format;
+use std::collections::HashMap;
+
 use crate::gguf::{GgufCtx, GgufValue, gguf_init_from_file};
+
+// stores imp tensor info for quickly accessing the respective data 
+struct AcuteTensorWeight {
+   offset: u64,
+   gguf_idx: usize, 
+   data_size: u64,
+}
 
 fn llama_split_prefix(fname: &str) -> &str {
     // basename-00001-of-xxxxx.gguf
@@ -49,9 +59,12 @@ fn model_loader(fname: &str, splits: Vec<&str>) -> Result<Vec<GgufCtx>, String> 
     let mut gguf_ctxs = Vec::with_capacity(n_splits);
     gguf_ctxs.push(gguf_ctx_01);
 
+    let weights_map: HashMap<String, AcuteTensorWeight> = HashMap::new(); // key is tensor name
     if n_splits > 1 {
         
         if !splits.is_empty() {
+            if n_splits != splits.len() { return Err(format!("Error: invalid custom split len"))}
+
             for path in splits {
                 if path.eq(fname) { continue; }
                 
@@ -72,6 +85,8 @@ fn model_loader(fname: &str, splits: Vec<&str>) -> Result<Vec<GgufCtx>, String> 
                 gguf_ctxs.push(split_ctx);
             }
         }
+        
+        // create weight_map // if n_splits = 1, dont create weight map, and simply pass it to the alocator, if its empty the alocator will use the weight_map else where use the Ggufctx
     }
     Ok(gguf_ctxs)
 }
