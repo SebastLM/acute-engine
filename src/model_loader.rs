@@ -25,10 +25,10 @@ fn llama_split_prefix(fname: &str) -> &str {
 
 
 fn get_splits_list(fname: &str, n_splits: usize) -> Vec<String> {
-    let mut splits: Vec<String> = Vec::with_capacity(n_splits - 1); // accounting for already processed first split
+    let mut splits: Vec<String> = Vec::with_capacity(n_splits);
     let prefix = llama_split_prefix(fname);
-    
-    for id in 2..=n_splits {
+
+    for id in 1..=n_splits {
         // zero padded 5 digits for both current split and total
         let split = format!("{}-{:05}-of-{:05}.gguf", prefix, id, n_splits);
         splits.push(split);
@@ -39,16 +39,16 @@ fn get_splits_list(fname: &str, n_splits: usize) -> Vec<String> {
 
 // loads all the files into respective GgufCtx
 // custom file list can be received
-fn model_loader(fname: &str, splits: Vec<&str>) -> Result<Vec<GgufCtx>, String> {
+fn model_loader(fname: &str, mut splits: Vec<String>) -> Result<Vec<(String, GgufCtx)>, String> {
     
     // parsing main file
-    let gguf_ctx_01 = match gguf_init_from_file(fname) {
+    let ctx0 = match gguf_init_from_file(fname) {
         Ok(ctx) => ctx,
         Err(e) => return Err(e),
     };
-    
+
     // finding number of splits
-    let n_splits = match gguf_ctx_01.find_kv("split.count") {
+    let n_splits = match ctx0.find_kv("split.count") {
         Some(v) => match v {
             GgufValue::Uint32(n) => *n as usize,
             _ => return Err(format!("ERROR: split.count is not a u32")),
@@ -56,37 +56,49 @@ fn model_loader(fname: &str, splits: Vec<&str>) -> Result<Vec<GgufCtx>, String> 
         None => return Err(format!("ERROR: no value found for split.count")),
     };
 
-    let mut gguf_ctxs = Vec::with_capacity(n_splits);
-    gguf_ctxs.push(gguf_ctx_01);
+    let mut ggufs = Vec::with_capacity(n_splits);
+    
+    // for AcuteDCtx
+    let mut n_elements: i64 = 0;
+    let mut n_bytes: u64 = 0;
 
-    let weights_map: HashMap<String, AcuteTensorWeight> = HashMap::new(); // key is tensor name
+    // create weight_map
+    let mut weights_map: HashMap<String, AcuteTensorWeight> = HashMap::new(); // key is tensor name
+
+    // add fname tensor's to weigth_map        
+    let mut add_wm_ctx = |idx: usize, ctx: GgufCtx, path: String| -> Result<(), String> {
+        for info in &ctx.tensor_infos {
+            if weights_map.contains_key(&info.name) {
+                return Err(format!("ERROR: tensor '{}' is duplicated", info.name));
+            }
+
+            n_elements += info.ne.iter().product::<i64>();
+            n_bytes += info.nbytes();
+
+            weights_map.insert(info.name.clone(), AcuteTensorWeight { offset: info.offset, gguf_idx: idx,  data_size: info.nbytes()});
+        }
+        ggufs.push((path, ctx));
+        Ok(())
+    };
+
+    add_wm_ctx(0, ctx0, fname.to_string())?;
+
     if n_splits > 1 {
         
-        if !splits.is_empty() {
-            if n_splits != splits.len() { return Err(format!("Error: invalid custom split len"))}
-
-            for path in splits {
-                if path.eq(fname) { continue; }
-                
-                let split_ctx = match gguf_init_from_file(path) {
-                    Ok(ctx) => ctx,
-                    Err(e) => return Err(e),
-                };
-                gguf_ctxs.push(split_ctx);
-            }
-        } else { // no custom splits given
-            let generated_splits = get_splits_list(&fname, n_splits);
-            
-            for path in generated_splits {
-                let split_ctx = match gguf_init_from_file(&path) {
-                    Ok(ctx) => ctx,
-                    Err(e) => return Err(e),
-                };
-                gguf_ctxs.push(split_ctx);
-            }
+        if splits.is_empty() { // no custom splits given
+            splits = get_splits_list(fname, n_splits);
         }
-        
-        // create weight_map // if n_splits = 1, dont create weight map, and simply pass it to the alocator, if its empty the alocator will use the weight_map else where use the Ggufctx
+
+        if n_splits != splits.len() { return Err(format!("Error: invalid custom split len"))}
+
+        // index 0 is always the already-processed first split (fname)
+        for (idx, path) in splits.into_iter().enumerate().skip(1) {
+            let split_ctx = match gguf_init_from_file(&path) {
+                Ok(ctx) => ctx,
+                Err(e) => return Err(e),
+            };
+            add_wm_ctx(idx, split_ctx, path)?;
+        }
     }
-    Ok(gguf_ctxs)
+    Ok(ggufs)
 }
