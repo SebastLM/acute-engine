@@ -107,7 +107,7 @@ fn permute_preserves_element_correspondence() {
             // after permute, logical (j, i) must still read the original (i, j)
             let offset = j * stride[0] + i * stride[1];
             assert_eq!(
-                tensor.data[offset], data[i * 4 + j],
+                tensor.as_slice()[offset], data[i * 4 + j],
                 "logical ({j},{i}) should read original ({i},{j})"
             );
         }
@@ -142,9 +142,9 @@ fn transpose_swaps_only_the_requested_axes() {
 #[test]
 fn make_contiguous_is_a_no_op_when_already_dense() {
     let mut tensor = t(vec![1.0, 2.0, 3.0, 4.0], &[2, 2]);
-    let before = tensor.data.clone();
+    let before = tensor.as_slice().to_vec();
     tensor.make_contiguous();
-    assert_eq!(tensor.data, before);
+    assert_eq!(tensor.as_slice(), (before).as_slice());
     assert!(tensor.is_contiguous());
 }
 
@@ -161,5 +161,5 @@ fn make_contiguous_materializes_a_permuted_tensor() {
     assert!(tensor.is_contiguous());
     assert_eq!(tensor.stride(), &[2, 1]);
     // row-major dense 4x2 transpose of [[0,1,2,3],[4,5,6,7]]
-    assert_eq!(tensor.data, vec![0.0, 4.0, 1.0, 5.0, 2.0, 6.0, 3.0, 7.0]);
+    assert_eq!(tensor.as_slice(), (vec![0.0, 4.0, 1.0, 5.0, 2.0, 6.0, 3.0, 7.0]).as_slice());
 }

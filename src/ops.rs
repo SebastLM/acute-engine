@@ -38,9 +38,9 @@ fn contiguous_add<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T
     );
 
     let data: Vec<T> = t1
-        .data
+        .as_slice()
         .iter()
-        .zip(t2.data.iter())
+        .zip(t2.as_slice().iter())
         .map(|(&a, &b)| a + b)
         .collect();
  
@@ -66,7 +66,7 @@ fn strided_add<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
         let offset2: usize = idx.iter().zip(t2.stride().iter())
                                 .map(|(&i, &s)| i * s).sum();
 
-        data[offset1] = t1.data[offset1] + t2.data[offset2];
+        data[offset1] = t1.as_slice()[offset1] + t2.as_slice()[offset2];
         for d in (0..idx.len()).rev() {
             idx[d] += 1;
             if idx[d] < shape[d] { break; }
@@ -103,9 +103,9 @@ fn contiguous_sub<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T
     );
 
     let data: Vec<T> = t1
-        .data
+        .as_slice()
         .iter()
-        .zip(t2.data.iter())
+        .zip(t2.as_slice().iter())
         .map(|(&a, &b)| a - b)
         .collect();
  
@@ -131,7 +131,7 @@ fn strided_sub<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
         let offset2: usize = idx.iter().zip(t2.stride().iter())
                                 .map(|(&i, &s)| i * s).sum();
 
-        data[offset1] = t1.data[offset1] - t2.data[offset2];
+        data[offset1] = t1.as_slice()[offset1] - t2.as_slice()[offset2];
         for d in (0..idx.len()).rev() {
             idx[d] += 1;
             if idx[d] < shape[d] { break; }
@@ -171,10 +171,10 @@ fn mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Result<Tensor<T>,&'
 
 // element_wise multiplication for matrices with 1 dimension
 fn ele_w_d1_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
-    let len = t1.data.len();
+    let len = t1.len();
     let mut data =  vec![T::default(); len];
     for i in 0..len {
-        data[i] = t1.data[i] * t2.data[i];
+        data[i] = t1.as_slice()[i] * t2.as_slice()[i];
     }
     Tensor::new(
         data,
@@ -186,8 +186,8 @@ fn ele_w_d1_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> 
 
 fn dot_d1_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
     let mut val: T = T::zero();
-    for i in 0..t1.data.len() {
-        val = val + t1.data[i] * t2.data[i];
+    for i in 0..t1.len() {
+        val = val + t1.as_slice()[i] * t2.as_slice()[i];
     }
     let data =  vec![val];
     Tensor::new(
@@ -224,7 +224,7 @@ fn strided_mul<T: TensorElement> (t1: &Tensor<T>, t2: &Tensor<T>) -> Tensor<T> {
                                 + idx2[len - 2] * t2.stride()[len - 2]
                                 + idx2[len - 1] * t2.stride()[len - 1];
 
-        data[pos] = data[pos] + t1.data[offset1] * t2.data[offset2];
+        data[pos] = data[pos] + t1.as_slice()[offset1] * t2.as_slice()[offset2];
 
         idx2[len - 2] += 1;
         if idx2[len - 2] >= shape2[len - 2] {

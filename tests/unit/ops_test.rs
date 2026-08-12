@@ -8,7 +8,7 @@ fn t(data: Vec<f32>, shape: &[usize]) -> Tensor<f32> {
 /// tensor to check strided results against, without disturbing the original.
 fn clone_tensor(t: &Tensor<f32>) -> Tensor<f32> {
     Tensor::new(
-        t.data.clone(),
+        t.as_slice().to_vec(),
         t.shape().to_vec().into_boxed_slice(),
         Some(t.stride().to_vec().into_boxed_slice()),
     )
@@ -32,7 +32,7 @@ fn add_sums_elementwise_for_freshly_built_contiguous_tensors() {
     let c = add(&a, &b).expect("shapes match");
 
     assert_eq!(c.shape(), &[2, 2]);
-    assert_eq!(c.data, vec![11.0, 22.0, 33.0, 44.0]);
+    assert_eq!(c.as_slice(), (vec![11.0, 22.0, 33.0, 44.0]).as_slice());
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn add_1d_tensors() {
 
     let c = add(&a, &b).expect("shapes match");
 
-    assert_eq!(c.data, vec![5.0, 7.0, 9.0]);
+    assert_eq!(c.as_slice(), (vec![5.0, 7.0, 9.0]).as_slice());
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn add_takes_the_strided_path_when_only_one_operand_is_non_contiguous() {
     // b logical view:                  [[1,2],[3,4],[5,6]]
     // elementwise sum:                 [[2,6],[5,9],[8,12]]
     assert_eq!(c.shape(), &[3, 2]);
-    assert_eq!(c.data, vec![2.0, 6.0, 5.0, 9.0, 8.0, 12.0]);
+    assert_eq!(c.as_slice(), (vec![2.0, 6.0, 5.0, 9.0, 8.0, 12.0]).as_slice());
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn add_uses_fast_path_when_both_operands_share_identical_non_canonical_stride() 
     c.make_contiguous();
 
     // a logical: [[1,4],[2,5],[3,6]], b logical: [[10,40],[20,50],[30,60]]
-    assert_eq!(c.data, vec![11.0, 44.0, 22.0, 55.0, 33.0, 66.0]);
+    assert_eq!(c.as_slice(), (vec![11.0, 44.0, 22.0, 55.0, 33.0, 66.0]).as_slice());
 }
 
 #[test]
@@ -107,16 +107,16 @@ fn add_strided_path_matches_dense_reference_for_a_3d_case_with_both_operands_non
     a_dense.make_contiguous();
     b_dense.make_contiguous();
     let expected: Vec<f32> = a_dense
-        .data
+        .as_slice()
         .iter()
-        .zip(b_dense.data.iter())
+        .zip(b_dense.as_slice().iter())
         .map(|(&x, &y)| x + y)
         .collect();
 
     let mut c = add(&a, &b).expect("shapes match");
     c.make_contiguous();
 
-    assert_eq!(c.data, expected);
+    assert_eq!(c.as_slice(), (expected).as_slice());
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn sub_subtracts_elementwise_for_freshly_built_contiguous_tensors() {
     let c = sub(&a, &b).expect("shapes match");
 
     assert_eq!(c.shape(), &[2, 2]);
-    assert_eq!(c.data, vec![-9.0, -18.0, -27.0, -36.0]);
+    assert_eq!(c.as_slice(), (vec![-9.0, -18.0, -27.0, -36.0]).as_slice());
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn sub_1d_tensors() {
 
     let c = sub(&a, &b).expect("shapes match");
 
-    assert_eq!(c.data, vec![-3.0, -3.0, -3.0]);
+    assert_eq!(c.as_slice(), (vec![-3.0, -3.0, -3.0]).as_slice());
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn sub_preserves_operand_order_through_the_strided_path() {
     // b logical view:                  [[1,2],[3,4],[5,6]]
     // elementwise a - b:               [[0,2],[-1,1],[-2,0]]
     assert_eq!(c.shape(), &[3, 2]);
-    assert_eq!(c.data, vec![0.0, 2.0, -1.0, 1.0, -2.0, 0.0]);
+    assert_eq!(c.as_slice(), (vec![0.0, 2.0, -1.0, 1.0, -2.0, 0.0]).as_slice());
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn sub_uses_fast_path_when_both_operands_share_identical_non_canonical_stride() 
     c.make_contiguous();
 
     // a logical: [[1,4],[2,5],[3,6]], b logical: [[10,40],[20,50],[30,60]]
-    assert_eq!(c.data, vec![-9.0, -36.0, -18.0, -45.0, -27.0, -54.0]);
+    assert_eq!(c.as_slice(), (vec![-9.0, -36.0, -18.0, -45.0, -27.0, -54.0]).as_slice());
 }
 
 #[test]
@@ -212,16 +212,16 @@ fn sub_strided_path_matches_dense_reference_for_a_3d_case_with_both_operands_non
     a_dense.make_contiguous();
     b_dense.make_contiguous();
     let expected: Vec<f32> = a_dense
-        .data
+        .as_slice()
         .iter()
-        .zip(b_dense.data.iter())
+        .zip(b_dense.as_slice().iter())
         .map(|(&x, &y)| x - y)
         .collect();
 
     let mut c = sub(&a, &b).expect("shapes match");
     c.make_contiguous();
 
-    assert_eq!(c.data, expected);
+    assert_eq!(c.as_slice(), (expected).as_slice());
 }
 
 #[test]
@@ -241,7 +241,7 @@ fn mul_1d_is_elementwise() {
     let c = mul(&a, &b).expect("shapes match");
 
     assert_eq!(c.shape(), &[3]);
-    assert_eq!(c.data, vec![4.0, 10.0, 18.0]);
+    assert_eq!(c.as_slice(), (vec![4.0, 10.0, 18.0]).as_slice());
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn mul_2d_matmul_for_freshly_built_contiguous_tensors() {
     let c = mul(&a, &b).expect("shapes compatible");
 
     assert_eq!(c.shape(), &[2, 2]);
-    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0]);
+    assert_eq!(c.as_slice(), (vec![58.0, 64.0, 139.0, 154.0]).as_slice());
 }
 
 #[test]
@@ -271,7 +271,7 @@ fn mul_takes_the_strided_path_when_operands_are_non_contiguous() {
     let c = mul(&a, &b).expect("shapes compatible");
 
     assert_eq!(c.shape(), &[2, 2]);
-    assert_eq!(c.data, vec![76.0, 103.0, 100.0, 136.0]);
+    assert_eq!(c.as_slice(), (vec![76.0, 103.0, 100.0, 136.0]).as_slice());
 }
 
 #[test]
@@ -283,5 +283,5 @@ fn mul_batched_3d_matmul() {
     let c = mul(&a, &b).expect("shapes compatible");
 
     assert_eq!(c.shape(), &[2, 2, 2]);
-    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0, 2.0, 3.0, 4.0, 5.0]);
+    assert_eq!(c.as_slice(), (vec![58.0, 64.0, 139.0, 154.0, 2.0, 3.0, 4.0, 5.0]).as_slice());
 }

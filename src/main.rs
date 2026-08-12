@@ -1,10 +1,7 @@
-mod ops;
-mod tensor;
-
 use std::{println, vec};
 
-use acute_engine::ops::add;
-use tensor::Tensor;
+use acute_engine::ops;
+use acute_engine::Tensor;
 
 
 
@@ -24,8 +21,8 @@ fn main() {
             Tensor::new(vec![], vec![0], None)
         },
     };
-    println!("{:?}", t1.data);
-    println!("{:?}", t3.data);
+    println!("{:?}", t1);
+    println!("{:?}", t3);
 
 
     println!("\n\n\n\n\n\n\n\n\n\n\n\n\n 
@@ -62,8 +59,8 @@ fn main() {
             Tensor::new(vec![], vec![0], None)
         },
     };
-    println!("{:?}", t1.data);
-    println!("{:?}", t3.data);
+    println!("{:?}", t1);
+    println!("{:?}", t3);
 
 
     println!("\n\n\n\n\n\n\n\n\n\n\n\n\n 
@@ -76,7 +73,7 @@ fn main() {
             Tensor::new(vec![], vec![0], None)
         },
     };
-    println!("{:?}", t1.data);
-    println!("{:?}", t3.data);
+    println!("{:?}", t1);
+    println!("{:?}", t3);
 
 }
