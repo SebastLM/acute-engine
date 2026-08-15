@@ -13,7 +13,7 @@ pub struct AcuteArena {
 
 impl AcuteArena {
     pub fn new(size: usize) -> Result<Self, String> {
-        let base = unsafe { allocator::map_anonymous(size)? };
+        let base = unsafe { allocator::allocate(size)? };
         Ok(Self { base, size, offset: 0, n_objects: 0 })
     }
 
@@ -50,6 +50,6 @@ impl AcuteArena {
 
 impl Drop for AcuteArena {
     fn drop(&mut self) {
-        unsafe { allocator::unmap(self.base, self.size); }
+        unsafe { allocator::deallocate(self.base, self.size); }
     }
 }
