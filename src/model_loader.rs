@@ -1,5 +1,5 @@
-use std::format;
 use std::collections::HashMap;
+use std::format;
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
 
@@ -10,9 +10,9 @@ use crate::tensor::Tensor;
 // stores tensor info for quickly finding which split file (and where in it)
 // a tensor's data lives, without re-scanning every GgufCtx
 pub struct AcuteTensorWeight {
-   pub offset: u64,
-   pub gguf_idx: usize,
-   pub data_size: u64,
+    pub offset: u64,
+    pub gguf_idx: usize,
+    pub data_size: u64,
 }
 
 fn llama_split_prefix(fname: &str) -> &str {
@@ -27,7 +27,6 @@ fn llama_split_prefix(fname: &str) -> &str {
 
     parts.next().unwrap_or(fname)
 }
-
 
 fn get_splits_list(fname: &str, n_splits: usize) -> Vec<String> {
     let mut splits: Vec<String> = Vec::with_capacity(n_splits);
@@ -53,7 +52,6 @@ fn ggml_shape_to_row_major(ne: &[i64; 4]) -> Vec<usize> {
     shape
 }
 
-
 // loads all the files into respective GgufCtx, builds a name -> location
 // index (weights_map) and totals up how many bytes the tensor data will
 // need once actually read in
@@ -61,8 +59,14 @@ fn ggml_shape_to_row_major(ne: &[i64; 4]) -> Vec<usize> {
 pub fn model_loader(
     fname: &str,
     mut splits: Vec<String>,
-) -> Result<(Vec<(String, GgufCtx)>, HashMap<String, AcuteTensorWeight>, u64), String> {
-
+) -> Result<
+    (
+        Vec<(String, GgufCtx)>,
+        HashMap<String, AcuteTensorWeight>,
+        u64,
+    ),
+    String,
+> {
     // parsing main file
     let ctx0 = match gguf_init_from_file(fname) {
         Ok(ctx) => ctx,
@@ -75,7 +79,7 @@ pub fn model_loader(
         Some(v) => match v {
             GgufValue::Uint32(n) => *n as usize,
             _ => return Err(format!("ERROR: split.count is not a u32")),
-        }
+        },
         None => 1,
     };
 
@@ -98,7 +102,14 @@ pub fn model_loader(
             n_elements += info.ne.iter().product::<i64>();
             n_bytes += info.nbytes();
 
-            weights_map.insert(info.name.clone(), AcuteTensorWeight { offset: info.offset, gguf_idx: idx,  data_size: info.nbytes()});
+            weights_map.insert(
+                info.name.clone(),
+                AcuteTensorWeight {
+                    offset: info.offset,
+                    gguf_idx: idx,
+                    data_size: info.nbytes(),
+                },
+            );
         }
         ggufs.push((path, ctx));
         Ok(())
@@ -107,12 +118,14 @@ pub fn model_loader(
     add_wm_ctx(0, ctx0, fname.to_string())?;
 
     if n_splits > 1 {
-
-        if splits.is_empty() { // no custom splits given
+        if splits.is_empty() {
+            // no custom splits given
             splits = get_splits_list(fname, n_splits);
         }
 
-        if n_splits != splits.len() { return Err(format!("Error: invalid custom split len"))}
+        if n_splits != splits.len() {
+            return Err(format!("Error: invalid custom split len"));
+        }
 
         // index 0 is always the already-processed first split (fname)
         for (idx, path) in splits.into_iter().enumerate().skip(1) {
@@ -151,13 +164,109 @@ fn load_tensor(
         .map_err(|e| format!("failed loading tensor '{}': {e}", info.name))
 }
 
+#[derive(Debug, Clone)]
+pub struct ModelHParams {
+    pub architecture: String,
+
+    pub block_count: u32,
+    pub embedding_length: u32,
+    pub feed_forward_length: u32,
+
+    pub attention_head_count: u32,
+    pub attention_head_count_kv: u32,
+    pub attention_key_length: u32,
+    pub attention_value_length: u32,
+
+    pub context_length: u32,
+    pub context_length_train: u32,
+
+    pub rope_dimension_count: u32,
+    pub rope_freq_base: f32,
+    pub rope_freq_scale: f32,
+
+    pub attention_layer_norm_rms_epsilon: f32,
+
+    pub vocab_size: u32,
+}
+
+impl ModelHParams {
+    pub fn from_gguf(ctx: &GgufCtx) -> Result<Self, String> {
+        Ok(Self {
+            architecture: ctx.get_string("general.architecture")?,
+
+            block_count: ctx.get_u32("llama.block_count")?,
+
+            embedding_length: ctx.get_u32("llama.embedding_length")?,
+
+            feed_forward_length: ctx.get_u32("llama.feed_forward_length")?,
+
+            attention_head_count: ctx.get_u32("llama.attention.head_count")?,
+
+            attention_head_count_kv: ctx.get_u32("llama.attention.head_count_kv")?,
+
+            attention_key_length: ctx.get_u32("llama.attention.key_length")?,
+
+            attention_value_length: ctx.get_u32("llama.attention.value_length")?,
+
+            context_length: ctx.get_u32("llama.context_length")?,
+
+            context_length_train: ctx.get_u32("llama.context_length")?,
+
+            rope_dimension_count: ctx.get_u32("llama.rope.dimension_count")?,
+
+            rope_freq_base: ctx.get_f32("llama.rope.freq_base")?,
+
+            rope_freq_scale: ctx.get_f32("llama.rope.freq_scale")?,
+
+            attention_layer_norm_rms_epsilon: ctx
+                .get_f32("llama.attention.layer_norm_rms_epsilon")?,
+
+            vocab_size: ctx.get_u32("llama.vocab_size")?,
+        })
+    }
+}
+
+impl GgufCtx {
+    pub fn get_u32(&self, key: &str) -> Result<u32, String> {
+        match self.find_kv(key) {
+            Some(GgufValue::Uint32(v)) => Ok(*v),
+            Some(_) => Err(format!("{key} has wrong type")),
+            None => Err(format!("missing GGUF key: {key}")),
+        }
+    }
+
+    pub fn get_f32(&self, key: &str) -> Result<f32, String> {
+        match self.find_kv(key) {
+            Some(GgufValue::Float32(v)) => Ok(*v),
+            Some(_) => Err(format!("{key} has wrong type")),
+            None => Err(format!("missing GGUF key: {key}")),
+        }
+    }
+
+    pub fn get_string(&self, key: &str) -> Result<String, String> {
+        match self.find_kv(key) {
+            Some(GgufValue::String(v)) => Ok(v.clone()),
+            Some(_) => Err(format!("{key} has wrong type")),
+            None => Err(format!("missing GGUF key: {key}")),
+        }
+    }
+}
+
 // parses fname (and its splits, if any), sizes an AcuteArena to fit every
 // tensor's data, then reads each tensor's raw bytes straight from its GGUF
 // file into that arena. only F32 is supported for now, anything quantized
 // gets rejected with a clear error instead of being silently misread
-pub fn load_model(fname: &str, splits: Vec<String>) -> Result<(AcuteArena, HashMap<String, Tensor<f32>>), String> {
+pub fn load_model(
+    fname: &str,
+    splits: Vec<String>,
+) -> Result<(AcuteArena, HashMap<String, Tensor<f32>>, ModelHParams), String> {
     let (ggufs, weights_map, n_bytes) = model_loader(fname, splits)?;
     let mut arena = AcuteArena::new(n_bytes as usize)?;
+
+    let hparams = match ModelHParams::from_gguf(&ggufs[0].1) {
+        Err(_) => return Err(format!("failed to load hparams")),
+        Ok(r) => r,
+    };
 
     let mut tensors: HashMap<String, Tensor<f32>> = HashMap::with_capacity(weights_map.len());
     for (path, ctx) in &ggufs {
@@ -168,5 +277,5 @@ pub fn load_model(fname: &str, splits: Vec<String>) -> Result<(AcuteArena, HashM
         }
     }
 
-    Ok((arena, tensors))
+    Ok((arena, tensors, hparams))
 }
